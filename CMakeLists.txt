@@ -56,9 +56,12 @@ target_compile_definitions(
         SIMDE_ENABLE_NATIVE_ALIASES
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC lib/simde)
-
-include_directories(src)
+target_include_directories(
+    ${PROJECT_NAME}
+    PUBLIC
+        src
+        lib/simde
+)
 
 if (NOT MINIMAL_BUILD)
     add_executable(
