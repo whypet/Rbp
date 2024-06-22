@@ -63,8 +63,8 @@ typedef float       FLOAT32;
 typedef double      FLOAT64;
 typedef long double LONGDOUBLE;
 
-#define ROTL(x, n, bits) ((UINT##bits)(x) << (UINT##bits)(n) | (UINT##bits)(x) >> (bits##u - (UINT##bits)(n)))
-#define ROTR(x, n, bits) ((UINT##bits)(x) >> (UINT##bits)(n) | (UINT##bits)(x) << (bits##u - (UINT##bits)(n)))
+#define ROTL(bits, x, n) ((UINT##bits)(x) << (UINT##bits)(n) | (UINT##bits)(x) >> (bits##u - (UINT##bits)(n)))
+#define ROTR(bits, x, n) ((UINT##bits)(x) >> (UINT##bits)(n) | (UINT##bits)(x) << (bits##u - (UINT##bits)(n)))
 
 typedef enum _RBPEXIT {
     RBPEXIT_Success,

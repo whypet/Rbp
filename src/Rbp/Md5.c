@@ -1,9 +1,11 @@
 #include <Rbp/Md5.h>
 
 #define MD5_F(B, C, D) (((B) & (C)) | (~(B) & (D)))
-#define MD5_G(B, C, D) (((B) & (C)) | ((C) & ~(D)))
+#define MD5_G(B, C, D) (((B) & (D)) | ((C) & ~(D)))
 #define MD5_H(B, C, D) ((B) ^ (C) ^ (D))
 #define MD5_I(B, C, D) ((C) ^ ((B) | ~(D)))
+
+#define MD5_CHUNK_SIZE (16 * sizeof(UINT32))
 
 typedef struct _MD5_STATE {
     UINT32 A;
@@ -12,7 +14,7 @@ typedef struct _MD5_STATE {
     UINT32 D;
 } MD5_STATE;
 
-const UINT32 _RbpMd5_Shift[64] = {
+const UINT32 _RbpMd5_Shift[] = {
     7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22,
     5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20,
     4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23,
@@ -20,13 +22,13 @@ const UINT32 _RbpMd5_Shift[64] = {
 };
 
 const MD5_STATE _RbpMd5_DefaultState = {
-    0x67452301,
-    0xefcdab89,
-    0x98badcfe,
-    0x10325476
+    .A = 0x67452301,
+    .B = 0xefcdab89,
+    .C = 0x98badcfe,
+    .D = 0x10325476
 };
 
-UINT32 _RbpMd5_K[64];
+UINT32 _RbpMd5_K[MD5_CHUNK_SIZE];
 
 RBPEXIT
 RBPAPI
@@ -46,11 +48,12 @@ RbpMd5Calculate(
     MD5_STATE ChunkState;
 
     State = _RbpMd5_DefaultState;
+    ChunkState = State;
 
     if (DigestSize < sizeof(UINT32) * 4)
         return RBPEXIT_InsufficientBuffer;
 
-    BufferSize = ALIGN_UP(InputSize + 9, 64);
+    BufferSize = ALIGN_UP(InputSize + 9, MD5_CHUNK_SIZE);
     Buffer = (UINT8 *)malloc(BufferSize);
 
     if (Buffer == NULL)
@@ -74,64 +77,68 @@ RbpMd5Calculate(
         BufferSize - sizeof(UINT64) - (InputSize + 1)
     );
 
-    *((UINT64 *)(Buffer + BufferSize) - 1) = (UINT64)InputSize;
+    *((UINT64 *)(Buffer + BufferSize) - 1) = (UINT64)InputSize * 8;
 
-    for (Index = 0; Index < BufferSize * 4; Index++) {
+    for (Index = 0; Index < BufferSize; Index++) {
         UINT32  BlockIndex;
         UINT32 *Blocks;
         UINT32  Value;
-        UINT32  Shift;
-        UINT32  j;
-        UINT32  k;
+        UINT32  i;
 
-        j = Index / 4;
-        k = j % 64;
+        Blocks = (UINT32 *)(Buffer + ALIGN_DOWN(Index, MD5_CHUNK_SIZE));
 
-        Blocks = (UINT32 *)(Buffer + ALIGN_DOWN(j, 64));
+        i = Index % MD5_CHUNK_SIZE;
 
-        if (k == 0)
-            ChunkState = State;
-
-        switch (k / 16) {
-        case 0:
-            Value = MD5_F(ChunkState.B, ChunkState.C, ChunkState.D);
-            BlockIndex = k;
-            break;
-        case 1:
-            Value = MD5_G(ChunkState.B, ChunkState.C, ChunkState.D);
-            BlockIndex = (5 * k + 1) % 16;
-            break;
-        case 2:
-            Value = MD5_H(ChunkState.B, ChunkState.C, ChunkState.D);
-            BlockIndex = (3 * k + 5) % 16;
-            break;
-        case 3:
-            Value = MD5_I(ChunkState.B, ChunkState.C, ChunkState.D);
-            BlockIndex = 7 * k % 16;
-            break;
-        };
-
-        Value += ChunkState.A + _RbpMd5_K[k] + Blocks[BlockIndex];
-
-        Shift = _RbpMd5_Shift[k];
-
-        ChunkState.A  = ChunkState.D;
-        ChunkState.B += ROTL(Value, Shift, 32);
-        ChunkState.C  = ChunkState.B;
-        ChunkState.D  = ChunkState.C;
-
-        if (k == 0) {
+        if (i == 0 && Index != 0) {
             State.A += ChunkState.A;
             State.B += ChunkState.B;
             State.C += ChunkState.C;
             State.D += ChunkState.D;
+
+            ChunkState = State;
         }
+
+        switch (i * 4 / MD5_CHUNK_SIZE) {
+        case 0:
+            Value = MD5_F(ChunkState.B, ChunkState.C, ChunkState.D);
+            BlockIndex = i;
+            break;
+        case 1:
+            Value = MD5_G(ChunkState.B, ChunkState.C, ChunkState.D);
+            BlockIndex = (5 * i + 1) % 16;
+            break;
+        case 2:
+            Value = MD5_H(ChunkState.B, ChunkState.C, ChunkState.D);
+            BlockIndex = (3 * i + 5) % 16;
+            break;
+        case 3:
+            Value = MD5_I(ChunkState.B, ChunkState.C, ChunkState.D);
+            BlockIndex = (7 * i) % 16;
+            break;
+        };
+
+        Value += ChunkState.A + _RbpMd5_K[i] + Blocks[BlockIndex];
+
+        ChunkState.A  = ChunkState.D;
+        ChunkState.D  = ChunkState.C;
+        ChunkState.C  = ChunkState.B;
+        ChunkState.B += ROTL(32, Value, _RbpMd5_Shift[i]);
     }
 
-    *((UINT32 *)Digest + 0) = State.A;
-    *((UINT32 *)Digest + 1) = State.B;
-    *((UINT32 *)Digest + 2) = State.C;
-    *((UINT32 *)Digest + 3) = State.D;
+    State.A += ChunkState.A;
+    State.B += ChunkState.B;
+    State.C += ChunkState.C;
+    State.D += ChunkState.D;
+
+    Result = memcpy_s(
+        Digest,
+        DigestSize,
+        &State,
+        sizeof(State)
+    );
+
+    if (Result != 0)
+        return RBPEXIT_InternalError;
 
     return RBPEXIT_Success;
 }
